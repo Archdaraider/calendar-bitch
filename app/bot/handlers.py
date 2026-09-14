@@ -16,7 +16,7 @@ from telegram.ext import (
 )
 
 from app.bot.access import restricted
-from app.categories import CATEGORY_CODES, category_hint, get_category, is_tagged, strip_tag
+from app.categories import CATEGORY_CODES, CATEGORY_EMOJI, category_hint, get_category, is_tagged, strip_tag
 from app.core.config import get_settings
 from app.gcal import calendar as gcal
 from app.girlfriend import get_girlfriend_events
@@ -130,23 +130,41 @@ async def _ensure_calendars_synced(context: ContextTypes.DEFAULT_TYPE) -> BotSta
 
 
 def _event_title(e) -> str:
-    """[GF]-tagged events display with a couple emoji instead of the raw tag,
+    """Category-tagged events display with an emoji instead of the raw [CODE] tag,
     everywhere events are rendered."""
-    if get_category(e.summary) == "GF":
-        return f"👩🏽❤️ {strip_tag(e.summary)}"
+    code = get_category(e.summary)
+    if code:
+        return f"{CATEGORY_EMOJI.get(code, '📌')} {strip_tag(e.summary)}"
     return e.summary
+
+
+def _event_day(e) -> date:
+    return datetime.strptime(e.start, "%Y-%m-%d").date() if e.is_all_day else datetime.fromisoformat(e.start).date()
+
+
+# Short, fixed-width separator under each day header -- deliberately not a full-width
+# rule, so it never wraps awkwardly on a narrow phone screen.
+DAY_SEPARATOR = "──────"
 
 
 def _format_events(events: list) -> str:
     if not events:
         return "Nothing found."
-    lines = []
+    lines: list[str] = []
+    current_day: date | None = None
     for e in events:
+        day = _event_day(e)
+        if day != current_day:
+            if current_day is not None:
+                lines.append("")
+            lines.append(day.strftime("%a %d %b"))
+            lines.append(DAY_SEPARATOR)
+            current_day = day
         if e.is_all_day:
-            lines.append(f"• {_event_title(e)} (all day)")
+            lines.append(f"{_event_title(e)} (all day)")
         else:
             start = datetime.fromisoformat(e.start)
-            lines.append(f"• {start.strftime('%a %d %b, %H:%M')} — {_event_title(e)}")
+            lines.append(f"{start.strftime('%H:%M')} — {_event_title(e)}")
     return "\n".join(lines)
 
 
@@ -221,7 +239,7 @@ async def _list_events_window(update: Update, context: ContextTypes.DEFAULT_TYPE
 def _format_daily_brief(events: list, day: date, quote: str) -> str:
     date_str = day.strftime("%d/%m")
     greeting = get_settings().greeting_name
-    lines = [f"Good day, {greeting}. Here is your schedule for today, ({date_str}):"]
+    lines = [f"Good day, {greeting}. Here is your schedule for today, ({date_str}):", ""]
     if not events:
         lines.append("NA")
     else:
@@ -427,17 +445,19 @@ def _format_gf_dual_tz(events: list, girlfriend_tz_name: str, local_tz_name: str
     current_day_label = None
     for e in events:
         if e.is_all_day:
-            lines.append(f"• {_event_title(e)} (all day)")
+            lines.append(f"{_event_title(e)} (all day)")
             continue
         start = datetime.fromisoformat(e.start)
         her_time = start.astimezone(girlfriend_tz)
         your_time = start.astimezone(local_tz)
         day_label = her_time.strftime("%a %d %b")
         if day_label != current_day_label:
-            lines.append(f"\n{day_label} (her day):")
+            lines.append("")
+            lines.append(f"{day_label} (her day)")
+            lines.append(DAY_SEPARATOR)
             current_day_label = day_label
         lines.append(
-            f"• {her_time.strftime('%H:%M')} her time  →  {your_time.strftime('%H:%M')} yours — {_event_title(e)}"
+            f"{her_time.strftime('%H:%M')} her time  →  {your_time.strftime('%H:%M')} yours — {_event_title(e)}"
         )
     return "\n".join(lines)
 

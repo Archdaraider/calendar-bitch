@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 
 import httpx
 
-from app.categories import get_category, strip_tag
+from app.categories import CATEGORY_EMOJI, get_category, strip_tag
 from app.core.config import get_settings
 from app.gcal import calendar as gcal
 from app.gcal.credentials import build_credentials
@@ -32,10 +32,11 @@ WINDOW_MINUTES = 5
 
 
 def _event_title(e) -> str:
-    """[GF]-tagged events display with a couple emoji instead of the raw tag,
+    """Category-tagged events display with an emoji instead of the raw [CODE] tag,
     everywhere events are rendered -- mirrors the treatment in app/bot/handlers.py."""
-    if get_category(e.summary) == "GF":
-        return f"👩🏽❤️ {strip_tag(e.summary)}"
+    code = get_category(e.summary)
+    if code:
+        return f"{CATEGORY_EMOJI.get(code, '📌')} {strip_tag(e.summary)}"
     return e.summary
 
 
@@ -70,7 +71,8 @@ def _next_day_target(target_time: str, now: datetime) -> date | None:
 
 def _format_night_preview(events: list, preview_date: date, quote: str) -> str:
     date_str = preview_date.strftime("%d/%m")
-    lines = [f"Good morning, 67 God Master Justin. Here is your schedule for tmr, ({date_str}):"]
+    greeting = get_settings().greeting_name
+    lines = [f"Good morning, {greeting}. Here is your schedule for tmr, ({date_str}):", ""]
     if not events:
         lines.append("NA")
     else:

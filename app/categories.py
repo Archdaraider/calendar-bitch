@@ -15,6 +15,20 @@ CATEGORIES = {
 
 CATEGORY_CODES = list(CATEGORIES.keys())
 
+# One emoji per category, used instead of the raw [CODE] tag wherever events are
+# displayed to you -- scannable at a glance, matches the girlfriend feature's existing
+# 👩🏽❤️ treatment for GF.
+CATEGORY_EMOJI = {
+    "WORK": "💼",
+    "!!!": "❗",
+    "MEET": "🤝",
+    "DL": "⏰",
+    "SCH": "📚",
+    "LEI": "🌿",
+    "GF": "👩🏽❤️",
+    "OTH": "📌",
+}
+
 _CODES_PATTERN = "|".join(re.escape(code) for code in CATEGORY_CODES)
 TAG_PREFIX_RE = re.compile(rf"^\[({_CODES_PATTERN})\]\s+")
 
