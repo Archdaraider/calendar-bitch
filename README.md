@@ -33,7 +33,7 @@ own Google account and Telegram ID. It is not a multi-tenant SaaS.
 ## Quickstart
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/Archdaraider/calendar-bitch.git
 cd calendar-bitch
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
