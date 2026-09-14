@@ -18,6 +18,7 @@ import httpx
 from app.categories import CATEGORY_EMOJI, get_category, strip_tag
 from app.core.config import get_settings
 from app.gcal import calendar as gcal
+from app.gcal.cache import list_events_cached
 from app.gcal.credentials import build_credentials
 from app.girlfriend import format_girlfriend_summary, get_girlfriend_events
 from app.nlp.quote import get_daily_quote
@@ -116,7 +117,7 @@ async def maybe_send_night_preview() -> None:
     if cal_ids:
         credentials = build_credentials()
         start_of_day = datetime(preview_date.year, preview_date.month, preview_date.day, tzinfo=now.tzinfo)
-        events = await gcal.list_events(credentials, cal_ids, start_of_day, start_of_day + timedelta(days=1))
+        events = await list_events_cached(credentials, cal_ids, start_of_day, start_of_day + timedelta(days=1))
 
     quote = await get_daily_quote()
     text = _format_night_preview(events, preview_date, quote)

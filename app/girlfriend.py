@@ -14,7 +14,8 @@ from datetime import datetime, timedelta
 from google.oauth2.credentials import Credentials
 
 from app.core.config import get_settings
-from app.gcal.calendar import EventInfo, list_events
+from app.gcal.cache import list_events_cached
+from app.gcal.calendar import EventInfo
 from app.state import BotState
 
 
@@ -36,7 +37,7 @@ async def get_girlfriend_events(
     if not calendar_ids:
         return []
     start_of_day = day.replace(hour=0, minute=0, second=0, microsecond=0)
-    return await list_events(credentials, calendar_ids, start_of_day, start_of_day + timedelta(days=days))
+    return await list_events_cached(credentials, calendar_ids, start_of_day, start_of_day + timedelta(days=days))
 
 
 def format_girlfriend_summary(events: list[EventInfo], day: datetime, when: str = "today") -> str:

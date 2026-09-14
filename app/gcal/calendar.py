@@ -36,6 +36,14 @@ def _service(credentials: Credentials):
     return build("calendar", "v3", credentials=credentials, cache_discovery=False)
 
 
+def _invalidate_cache() -> None:
+    # Deferred import -- app.gcal.cache imports list_events from this module, so a
+    # module-level import here would be circular. By the time this actually runs
+    # (after a successful write), both modules are already fully loaded.
+    from app.gcal.cache import invalidate
+    invalidate()
+
+
 async def list_calendars(credentials: Credentials) -> list[CalendarInfo]:
     def _call():
         service = _service(credentials)
@@ -167,7 +175,9 @@ async def create_event(
             is_all_day=False,
         )
 
-    return await asyncio.to_thread(_call)
+    result = await asyncio.to_thread(_call)
+    _invalidate_cache()
+    return result
 
 
 async def get_event(credentials: Credentials, calendar_id: str, event_id: str) -> dict:
@@ -203,6 +213,7 @@ async def update_event_time(
         service.events().patch(calendarId=calendar_id, eventId=event_id, body=body).execute()
 
     await asyncio.to_thread(_call)
+    _invalidate_cache()
 
 
 async def update_event_recurrence(
@@ -213,6 +224,7 @@ async def update_event_recurrence(
         service.events().patch(calendarId=calendar_id, eventId=event_id, body={"recurrence": recurrence}).execute()
 
     await asyncio.to_thread(_call)
+    _invalidate_cache()
 
 
 async def delete_event(credentials: Credentials, calendar_id: str, event_id: str) -> None:
@@ -221,6 +233,7 @@ async def delete_event(credentials: Credentials, calendar_id: str, event_id: str
         service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
 
     await asyncio.to_thread(_call)
+    _invalidate_cache()
 
 
 async def update_event_summary(
@@ -242,4 +255,6 @@ async def update_event_summary(
             is_all_day="date" in start,
         )
 
-    return await asyncio.to_thread(_call)
+    result = await asyncio.to_thread(_call)
+    _invalidate_cache()
+    return result

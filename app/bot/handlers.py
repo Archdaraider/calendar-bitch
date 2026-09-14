@@ -19,6 +19,7 @@ from app.bot.access import restricted
 from app.categories import CATEGORY_CODES, CATEGORY_EMOJI, category_hint, get_category, is_tagged, strip_tag
 from app.core.config import get_settings
 from app.gcal import calendar as gcal
+from app.gcal.cache import list_events_cached
 from app.girlfriend import get_girlfriend_events
 from app.nlp import gemini_client
 from app.nlp.llm_parser import parse_event_with_ai
@@ -232,7 +233,7 @@ async def _list_events_window(update: Update, context: ContextTypes.DEFAULT_TYPE
     state = await _ensure_calendars_synced(context)
     credentials = _get_credentials(context)
     now = datetime.now(timezone.utc)
-    events = await gcal.list_events(credentials, state.all_calendar_ids(), now, now + window)
+    events = await list_events_cached(credentials, state.all_calendar_ids(), now, now + window)
     await update.effective_message.reply_text(f"{label}:\n{_format_events(events)}")
 
 
@@ -268,7 +269,7 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     credentials = _get_credentials(context)
     now = datetime.now(safe_zoneinfo(state.timezone))
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    events = await gcal.list_events(credentials, state.all_calendar_ids(), start, start + timedelta(days=1))
+    events = await list_events_cached(credentials, state.all_calendar_ids(), start, start + timedelta(days=1))
     quote = await get_daily_quote()
     await update.effective_message.reply_text(_format_daily_brief(events, now.date(), quote))
 
@@ -286,7 +287,7 @@ async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     credentials = _get_credentials(context)
     now = datetime.now(safe_zoneinfo(state.timezone))
     start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    events = await gcal.list_events(credentials, state.all_calendar_ids(), start, start + timedelta(days=1))
+    events = await list_events_cached(credentials, state.all_calendar_ids(), start, start + timedelta(days=1))
     await update.effective_message.reply_text(f"Tomorrow:\n{_format_events(events)}")
 
 
@@ -295,7 +296,7 @@ async def next_event(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     state = await _ensure_calendars_synced(context)
     credentials = _get_credentials(context)
     now = datetime.now(timezone.utc)
-    events = await gcal.list_events(credentials, state.all_calendar_ids(), now, now + timedelta(days=30))
+    events = await list_events_cached(credentials, state.all_calendar_ids(), now, now + timedelta(days=30))
     if not events:
         await update.effective_message.reply_text("No upcoming events in the next 30 days.")
         return
@@ -313,7 +314,7 @@ async def _list_upcoming_by_category(
     state = await _ensure_calendars_synced(context)
     credentials = _get_credentials(context)
     now = datetime.now(timezone.utc)
-    events = await gcal.list_events(
+    events = await list_events_cached(
         credentials, state.all_calendar_ids(), now, now + timedelta(days=UPCOMING_WINDOW_DAYS)
     )
     filtered = [e for e in events if get_category(e.summary) in categories]
@@ -390,7 +391,7 @@ async def gf_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = await _ensure_calendars_synced(context)
     credentials = _get_credentials(context)
     now = datetime.now(timezone.utc)
-    events = await gcal.list_events(credentials, state.all_calendar_ids(), now, now + timedelta(days=GF_LOOKAHEAD_DAYS))
+    events = await list_events_cached(credentials, state.all_calendar_ids(), now, now + timedelta(days=GF_LOOKAHEAD_DAYS))
     gf_events = [e for e in events if get_category(e.summary) == "GF"]
     if gf_events:
         nxt = gf_events[0]
@@ -569,7 +570,7 @@ async def _fetch_upcoming_for_bulk_action(context: ContextTypes.DEFAULT_TYPE) ->
     credentials = _get_credentials(context)
     now = datetime.now(safe_zoneinfo(state.timezone))
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    events = await gcal.list_events(
+    events = await list_events_cached(
         credentials, state.all_calendar_ids(), today_start, today_start + timedelta(days=BULK_ACTION_WINDOW_DAYS)
     )
     return events, state
@@ -1106,7 +1107,7 @@ async def categorize_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     state = await _ensure_calendars_synced(context)
     credentials = _get_credentials(context)
     now = datetime.now(timezone.utc)
-    events = await gcal.list_events(credentials, state.all_calendar_ids(), now, now + timedelta(days=60))
+    events = await list_events_cached(credentials, state.all_calendar_ids(), now, now + timedelta(days=60))
 
     to_tag = [e for e in events if not is_tagged(e.summary)]
     if not to_tag:
@@ -1159,7 +1160,7 @@ async def _build_picker(
         events = await gcal.list_events(credentials, state.all_calendar_ids(), start, start + timedelta(days=1))
     else:
         now = datetime.now(timezone.utc)
-        events = await gcal.list_events(credentials, state.all_calendar_ids(), now, now + timedelta(days=14))
+        events = await list_events_cached(credentials, state.all_calendar_ids(), now, now + timedelta(days=14))
         events = events[:10]
 
     if list_mode == "date":

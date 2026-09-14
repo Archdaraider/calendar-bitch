@@ -184,6 +184,16 @@ inside Railway's Free plan ($0/month, $1/month included usage credit):
   `/categorize`.
 - All bot state (calendar Share/Private flags, timezone, scheduled-message settings)
   lives in one JSON file on a Volume **shared by both services**.
+- `/today`, `/week`, `/next`, `/upcoming_*`, `/gf`, `/categorize`, bulk actions, and the
+  scheduled messages all share a disk-backed event cache (`app/gcal/cache.py`, same
+  Volume) — the first of these to run fetches a wide window and caches it for 5
+  minutes; everything else within that window reads the cache instead of calling
+  Google's API again. Since Railway bills serverless compute by the second, skipping
+  that network round-trip cuts billed time more directly than it matters how many API
+  calls happen — this is deliberately optimized for compute cost over API-call count.
+  Any write (add/edit/delete) invalidates it immediately so you never see stale data
+  from your own actions; the 5-minute TTL only bounds staleness from edits made
+  directly in Google Calendar, bypassing the bot.
 - The bot only responds to `OWNER_TELEGRAM_USER_ID`; anyone else gets "This bot is
   private."
 
