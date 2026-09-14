@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+.DS_Store
+.git/
+node_modules/
+package.json
+package-lock.json
+.railway/
