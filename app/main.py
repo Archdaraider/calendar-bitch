@@ -31,10 +31,7 @@ async def lifespan(_: FastAPI):
             "unauthenticated requests. Set it before exposing this publicly."
         )
 
-    # A bad/placeholder token or missing Google config must not take the whole service
-    # down -- /healthz should stay up regardless so Railway doesn't crash-loop it.
-    # bot_data is populated before set_webhook is even attempted, so a webhook
-    # registration failure can never leave handlers reaching into an empty bot_data.
+    # A bad token or missing Google config must not take /healthz down with it.
     try:
         await telegram_app.initialize()
         telegram_app.bot_data["state"] = load_state()
@@ -94,10 +91,7 @@ async def telegram_webhook(
         raise HTTPException(status_code=503, detail="Bot not ready -- check startup logs")
     data = await request.json()
     update = Update.de_json(data, telegram_app.bot)
-    # Process inline (not via update_queue + a background task) so all outbound activity
-    # -- Google Calendar calls, the bot's reply -- finishes before this request returns.
-    # That matters on Railway's Serverless/sleep mode: the container can go back to sleep
-    # shortly after its last outbound packet, so we can't let processing run detached
-    # after the webhook response is already on its way back to Telegram.
+    # Awaited inline, not queued -- Serverless can sleep right after this response,
+    # so nothing can be left running in the background.
     await telegram_app.process_update(update)
     return Response(status_code=200)

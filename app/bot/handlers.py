@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 from google.oauth2.credentials import Credentials
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -78,9 +79,7 @@ HELP_TEXT = (
     "button below only appears once HOWABOUT_APP_LINK is actually set."
 )
 
-# Registered with Telegram via set_my_commands() at startup (app/main.py) so typing "/"
-# shows this list in the native command picker -- single source of truth, kept in sync
-# with register_handlers() below rather than relying on a manual BotFather step.
+# Registered with Telegram via set_my_commands() at startup -- typing "/" shows this list.
 BOT_COMMANDS = [
     # View
     ("today", "Show today's events"),
@@ -131,8 +130,7 @@ async def _ensure_calendars_synced(context: ContextTypes.DEFAULT_TYPE) -> BotSta
 
 
 def _event_title(e) -> str:
-    """Category-tagged events display with an emoji instead of the raw [CODE] tag,
-    everywhere events are rendered."""
+    """Shows an emoji instead of the raw [CODE] tag."""
     code = get_category(e.summary)
     if code:
         return f"{CATEGORY_EMOJI.get(code, '📌')} {strip_tag(e.summary)}"
@@ -143,8 +141,7 @@ def _event_day(e) -> date:
     return datetime.strptime(e.start, "%Y-%m-%d").date() if e.is_all_day else datetime.fromisoformat(e.start).date()
 
 
-# Short, fixed-width separator under each day header -- deliberately not a full-width
-# rule, so it never wraps awkwardly on a narrow phone screen.
+# Short on purpose so it never wraps on a narrow phone screen.
 DAY_SEPARATOR = "──────"
 
 
@@ -177,10 +174,7 @@ HOWABOUT_BUTTON_TEXT = "📅 Open HowAbout"
 
 
 def _main_reply_keyboard() -> ReplyKeyboardMarkup | ReplyKeyboardRemove:
-    """Persistent buttons docked below the text input, always visible in the chat.
-    Google Calendar always shows (no config needed -- opens whichever Google account
-    is active on the device). HowAbout only shows once HOWABOUT_APP_LINK is a real
-    value -- its absence is the signal that the link isn't configured yet."""
+    """Google Calendar always shows; HowAbout only once HOWABOUT_APP_LINK is set."""
     settings = get_settings()
     row = [CALENDAR_BUTTON_TEXT]
     if settings.howabout_app_link and settings.howabout_app_link != "PLACEHOLDER_HOWABOUT_LINK":
@@ -263,8 +257,7 @@ def _format_daily_brief(events: list, day: date, quote: str) -> str:
 
 @restricted
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Calendar-day bounded (midnight to midnight in your timezone), full brief with
-    # greeting + daily quote -- same treatment as the 11:59pm "tomorrow" preview.
+    # Calendar-day bounded, not a rolling 24h window.
     state = await _ensure_calendars_synced(context)
     credentials = _get_credentials(context)
     now = datetime.now(safe_zoneinfo(state.timezone))
@@ -281,8 +274,6 @@ async def week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 @restricted
 async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Calendar-day bounded (midnight to midnight in your timezone), unlike /today's
-    # rolling 24h window -- "tomorrow" needs an actual day boundary to mean anything.
     state = await _ensure_calendars_synced(context)
     credentials = _get_credentials(context)
     now = datetime.now(safe_zoneinfo(state.timezone))
@@ -429,8 +420,7 @@ async def gf_schedule_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.effective_message.reply_text(f"👩🏽❤️ {name}'s week ahead:\n{_format_events(events)}")
 
 
-# Window is bounded by HER calendar day (GIRLFRIEND_TIMEZONE), not yours -- "today and
-# tomorrow" means her today and her tomorrow, since this is her schedule.
+# Bounded by her calendar day, not yours.
 GF_SCHEDULE_TODAY_DAYS = 2
 
 
@@ -548,8 +538,7 @@ async def _handle_cancel_by_description(
     )
 
 
-# How far ahead to search for matches -- long enough to cover a full recurring-class
-# semester (e.g. "until December" from September), short enough to stay a fast query.
+# Long enough to cover a full recurring-class semester.
 BULK_ACTION_WINDOW_DAYS = 365
 
 
@@ -577,9 +566,7 @@ async def _fetch_upcoming_for_bulk_action(context: ContextTypes.DEFAULT_TYPE) ->
 
 
 def _bulk_selection_keyboard(plan: list[dict], selected: set[int], prefix: str) -> InlineKeyboardMarkup:
-    """Per-item checklist (✅/⬜, tap to toggle) instead of an all-or-nothing Confirm --
-    shared by bulk-delete and bulk-edit-time so you can pick exactly which matches to
-    actually apply."""
+    """Per-item checklist, shared by bulk-delete and bulk-edit-time."""
     rows = []
     for idx, item in enumerate(plan):
         mark = "✅" if idx in selected else "⬜"
@@ -598,9 +585,7 @@ def _bulk_selection_keyboard(plan: list[dict], selected: set[int], prefix: str) 
 async def _handle_bulk_selection_toggle(
     query, context: ContextTypes.DEFAULT_TYPE, pending_key: str, prefix: str, action: str, idx: int | None
 ) -> bool:
-    """Handles the toggle/all/none sub-actions shared by both bulk flows' callbacks.
-    Returns True if it handled the tap (caller should return immediately after),
-    False if `action` wasn't one of these (caller should fall through to confirm/cancel)."""
+    """Returns True if it handled the tap, False if the caller should handle confirm/cancel itself."""
     if action not in ("toggle", "all", "none"):
         return False
     pending = context.user_data.get(pending_key)
@@ -615,7 +600,11 @@ async def _handle_bulk_selection_toggle(
         selected.update(range(len(pending["plan"])))
     elif action == "none":
         selected.clear()
-    await query.edit_message_reply_markup(reply_markup=_bulk_selection_keyboard(pending["plan"], selected, prefix))
+    try:
+        await query.edit_message_reply_markup(reply_markup=_bulk_selection_keyboard(pending["plan"], selected, prefix))
+    except BadRequest as e:
+        if "not modified" not in str(e).lower():
+            raise
     return True
 
 
@@ -638,10 +627,8 @@ async def _handle_bulk_delete_request(
         await update.effective_message.reply_text(f"Nothing upcoming matches {cat_note}{desc}.")
         return
 
-    # One-off events get deleted outright; recurring series are only truncated from
-    # today onward (past occurrences are left alone as history), per how you asked this
-    # to behave -- so group matched instances by their master series and act on that
-    # master once, rather than per matched instance.
+    # One-off events get deleted outright; recurring series are truncated from today
+    # onward instead, so group matched instances by master and act on each once.
     plan: list[dict] = []
     seen_masters: set[str] = set()
     for e in matches:
@@ -649,8 +636,6 @@ async def _handle_bulk_delete_request(
             if e.recurring_event_id in seen_masters:
                 continue
             seen_masters.add(e.recurring_event_id)
-            # The matched instance's own weekday is the series' recurring day (weekly
-            # RRULEs built by this bot always share DTSTART's weekday).
             weekday = "" if e.is_all_day else datetime.fromisoformat(e.start).strftime("%A")
             day_note = f", {weekday}s" if weekday else ""
             plan.append({
@@ -751,10 +736,7 @@ async def _handle_bulk_edit_time_request(
         await update.effective_message.reply_text(f"Nothing upcoming matches {cat_note}{desc}.")
         return
 
-    # A recurring match is edited once via its master -- moves the whole series' clock
-    # time, past and future alike, since every generated occurrence derives its
-    # time-of-day from the master's own start (per how you asked this to behave, unlike
-    # bulk-delete's today-onward-only truncation).
+    # Unlike bulk-delete, this edits the whole series at once (past and future).
     plan: list[dict] = []
     seen_targets: set[str] = set()
     for e in matches:
@@ -1092,9 +1074,7 @@ CATEGORIZE_SCHEMA = {
     "required": ["category"],
 }
 
-# Keeps one webhook request well under Telegram's delivery timeout even with a
-# sizeable backlog -- /categorize is idempotent (already-tagged events are skipped),
-# so re-running it just picks up where the previous run left off.
+# Keeps one webhook request under Telegram's delivery timeout; re-run to continue.
 MAX_EVENTS_PER_CATEGORIZE_RUN = 20
 
 
@@ -1149,12 +1129,8 @@ async def _build_picker(
     state = await _ensure_calendars_synced(context)
     credentials = _get_credentials(context)
     if list_mode == "recent":
-        # Most recently *added* (by creation time), not soonest upcoming -- lets you
-        # quickly find whatever you just texted in, wherever it's scheduled.
         events = await gcal.list_recently_created_events(credentials, state.all_calendar_ids(), limit=10)
     elif list_mode == "date":
-        # A specific day's events -- used by the cancel-by-description fallback when
-        # the keyword match was ambiguous or missing. No natural "other view" toggle.
         target_date = target_date or context.user_data.get("picker_date")
         start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=timezone.utc)
         events = await gcal.list_events(credentials, state.all_calendar_ids(), start, start + timedelta(days=1))

@@ -1,10 +1,5 @@
-"""Entry point for the separate Railway Cron Job service that sends scheduled
-messages. Runs independently of the main webhook service (which sleeps between
-messages and can't reliably fire its own scheduled jobs), so this runs on its
-own schedule (every 5 minutes, the shortest interval Railway allows), checks
-whether it's currently within a configured send window, and sends the message
-directly via a raw Telegram API call -- no need to boot the full bot
-Application for this.
+"""Separate Railway Cron Job that sends the scheduled messages every 5 minutes,
+since the main webhook service sleeps and can't fire its own timers.
 
     python -m app.agenda_cron
 """
@@ -27,14 +22,12 @@ from app.state import load_state, safe_zoneinfo, save_state
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Matches Railway's minimum cron interval -- if the schedule and this drift apart,
-# widen this rather than the cron interval.
+# Matches Railway's minimum cron interval.
 WINDOW_MINUTES = 5
 
 
 def _event_title(e) -> str:
-    """Category-tagged events display with an emoji instead of the raw [CODE] tag,
-    everywhere events are rendered -- mirrors the treatment in app/bot/handlers.py."""
+    """Mirrors the [CODE]-to-emoji treatment in app/bot/handlers.py."""
     code = get_category(e.summary)
     if code:
         return f"{CATEGORY_EMOJI.get(code, '📌')} {strip_tag(e.summary)}"
@@ -52,15 +45,7 @@ async def _send_telegram_message(text: str) -> None:
 
 
 def _next_day_target(target_time: str, now: datetime) -> date | None:
-    """Both scheduled messages mean "preview the next calendar day", but their
-    configured send time can be any HH:MM -- including right at the midnight
-    boundary (23:59), where Railway's 5-minute cron ticks never land exactly on
-    target, so the actual fire happens shortly *after* midnight. This one modular
-    check handles every case uniformly: if `now` is within WINDOW_MINUTES after
-    `target_time` (wrapping across midnight), returns the date being previewed --
-    "today" if the tick already rolled past midnight relative to the target, else
-    "tomorrow". Returns None if we're outside the send window entirely.
-    """
+    """Date being previewed if `now` is within the send window of `target_time`, else None. Handles wrapping past midnight."""
     hour, minute = (int(x) for x in target_time.split(":"))
     target_minutes = hour * 60 + minute
     now_minutes = now.hour * 60 + now.minute
@@ -95,7 +80,7 @@ def _format_night_preview(events: list, preview_date: date, quote: str) -> str:
 
 
 async def maybe_send_night_preview() -> None:
-    """Your own next-day agenda -- default 23:59, adjustable via /night_agenda_set."""
+    """Your own next-day agenda, default 23:59."""
     state = load_state()
     if not state.night_agenda_enabled:
         logger.info("Night agenda disabled, nothing to do")
@@ -129,9 +114,7 @@ async def maybe_send_night_preview() -> None:
 
 
 async def maybe_send_girlfriend_summary() -> None:
-    """Her next-day agenda -- default 17:00, adjustable via /girlfriend_agenda_set.
-    Sent in the owner's evening since she's ~12h ahead in SG time, so her next day has
-    usually already started by then."""
+    """Her next-day agenda, default 17:00 (sent in the owner's evening, her morning)."""
     state = load_state()
     if not state.girlfriend_agenda_enabled:
         logger.info("Girlfriend summary disabled, nothing to do")
@@ -172,8 +155,7 @@ async def maybe_send_girlfriend_summary() -> None:
 
 
 async def _run_all() -> None:
-    # Each check is independent -- one raising must not prevent the others from running
-    # in the same cron tick.
+    # Each check is independent -- one raising shouldn't block the other.
     for check in (maybe_send_night_preview, maybe_send_girlfriend_summary):
         try:
             await check()

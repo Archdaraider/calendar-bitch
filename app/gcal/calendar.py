@@ -25,10 +25,7 @@ class EventInfo:
     end: str
     is_all_day: bool
     created: str = ""
-    # Set only on instances of a recurring series (singleEvents=True expands each
-    # occurrence with its own `id`, but they all share this pointer back to the master
-    # event that actually holds the RRULE) -- used by bulk-delete to truncate the whole
-    # series via the master rather than trying to delete/edit individual instances.
+    # Set only on recurring-series instances -- points back to the master event.
     recurring_event_id: str = ""
 
 
@@ -37,9 +34,7 @@ def _service(credentials: Credentials):
 
 
 def _invalidate_cache() -> None:
-    # Deferred import -- app.gcal.cache imports list_events from this module, so a
-    # module-level import here would be circular. By the time this actually runs
-    # (after a successful write), both modules are already fully loaded.
+    # Deferred import to avoid a circular import with app.gcal.cache.
     from app.gcal.cache import invalidate
     invalidate()
 
@@ -61,10 +56,7 @@ async def list_calendars(credentials: Credentials) -> list[CalendarInfo]:
 
 
 async def sync_calendars_into_state(credentials: Credentials, state: BotState) -> None:
-    """Fetches the live Google calendar list and merges it into state, preserving
-    any existing Share/Private flags. Excludes the girlfriend's shared calendar (if
-    configured) -- that's a separate data source for the dedicated girlfriend-summary
-    feature only, never mixed into personal views."""
+    """Refreshes state.calendars, excluding the girlfriend's calendar(s) if configured."""
     settings = get_settings()
     girlfriend_email = settings.girlfriend_email.strip().lower()
     howabout_name = settings.girlfriend_howabout_calendar_name.strip().lower()
@@ -133,11 +125,7 @@ async def list_events(
 async def list_recently_created_events(
     credentials: Credentials, calendar_ids: list[str], limit: int = 10
 ) -> list[EventInfo]:
-    """Returns the `limit` most recently created events (by Google's 'created'
-    timestamp), regardless of when they're scheduled -- used by /edit so you can
-    quickly find whatever you just added, even if it's scheduled far in the future.
-    The Calendar API can't sort by creation time server-side, so this fetches a wide
-    window and sorts client-side."""
+    """Most recently created events -- Google can't sort by creation time server-side."""
     now = datetime.now(timezone.utc)
     events = await list_events(credentials, calendar_ids, now - timedelta(days=30), now + timedelta(days=730))
     events.sort(key=lambda e: e.created, reverse=True)
@@ -181,9 +169,7 @@ async def create_event(
 
 
 async def get_event(credentials: Credentials, calendar_id: str, event_id: str) -> dict:
-    """Raw event resource -- used where we need fields list_events() doesn't surface
-    (e.g. a recurring master's own start/end/recurrence, since singleEvents=True only
-    returns expanded instances)."""
+    """Raw event resource -- for fields list_events() doesn't surface, e.g. a master's own recurrence."""
     def _call():
         service = _service(credentials)
         return service.events().get(calendarId=calendar_id, eventId=event_id).execute()
@@ -192,8 +178,7 @@ async def get_event(credentials: Credentials, calendar_id: str, event_id: str) -
 
 
 async def get_event_recurrence(credentials: Credentials, calendar_id: str, event_id: str) -> list[str] | None:
-    """Fetches the master recurring event's RRULE list -- individual instances from
-    list_events() (singleEvents=True) don't carry this, only the master does."""
+    """The master's RRULE list -- instances from list_events() don't carry this."""
     item = await get_event(credentials, calendar_id, event_id)
     return item.get("recurrence")
 
@@ -201,9 +186,7 @@ async def get_event_recurrence(credentials: Credentials, calendar_id: str, event
 async def update_event_time(
     credentials: Credentials, calendar_id: str, event_id: str, start: datetime, end: datetime, tz: str
 ) -> None:
-    """Patches only start/end -- used by bulk-edit-time. For a recurring master, this
-    moves the whole series' clock time (past and future instances alike), since every
-    generated occurrence derives its time-of-day from the master's own start."""
+    """For a recurring master, moves the whole series' clock time at once."""
     def _call():
         service = _service(credentials)
         body = {

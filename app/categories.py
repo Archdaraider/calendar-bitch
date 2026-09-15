@@ -15,9 +15,7 @@ CATEGORIES = {
 
 CATEGORY_CODES = list(CATEGORIES.keys())
 
-# One emoji per category, used instead of the raw [CODE] tag wherever events are
-# displayed to you -- scannable at a glance, matches the girlfriend feature's existing
-# 👩🏽❤️ treatment for GF.
+# One emoji per category, shown instead of the raw [CODE] tag.
 CATEGORY_EMOJI = {
     "WORK": "💼",
     "!!!": "❗",
@@ -42,15 +40,13 @@ def is_tagged(title: str) -> bool:
 
 
 def get_category(title: str) -> str | None:
-    """Returns the category code if `title` starts with a recognized [CODE] tag,
-    otherwise None. Used to filter events by category (e.g. /upcoming_workstuff)."""
+    """Category code if `title` starts with a recognized [CODE] tag, else None."""
     m = TAG_PREFIX_RE.match(title)
     return m.group(1) if m else None
 
 
 def category_hint() -> str:
-    """Shared prompt fragment describing the category codes to Gemini, used by both
-    new-event parsing and the /categorize bulk backfill."""
+    """Prompt fragment describing the category codes to Gemini."""
     hint = "Categories: " + "; ".join(f"{code}={desc}" for code, desc in CATEGORIES.items()) + "."
     names = get_settings().girlfriend_name_list
     if names:

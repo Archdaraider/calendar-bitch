@@ -8,8 +8,7 @@ PROMPT = (
     "the quote text."
 )
 
-# Used if Gemini is unconfigured or every key fails -- the nightly message should
-# never be missing this line.
+# Used if Gemini is unconfigured or every key fails.
 FALLBACK_QUOTES = [
     "Discipline is choosing between what you want now and what you want most.",
     "Tomorrow is built by what you do tonight and follow through tomorrow.",

@@ -24,20 +24,15 @@ class CalendarPref:
 @dataclass
 class BotState:
     calendars: dict[str, CalendarPref] = field(default_factory=dict)
-    # Neutral until you run /timezone -- see the README's first-run steps.
+    # Neutral until you run /timezone.
     timezone: str = "UTC"
-    # Your own next-day agenda -- default 23:59, adjustable via /night_agenda_set.
     night_agenda_enabled: bool = False
     night_agenda_time: str = "23:59"
     night_agenda_last_sent_date: str = ""
-    # Girlfriend's shared-calendar summary, previewing HER next day -- default 17:00
-    # (she's ~12h ahead in SG time, so her next day has usually already started by the
-    # owner's evening), adjustable via /girlfriend_agenda_set.
     girlfriend_agenda_enabled: bool = False
     girlfriend_agenda_time: str = "17:00"
     girlfriend_agenda_last_sent_date: str = ""
-    # Resolved by name during a calendar sync (see gcal.calendar.sync_calendars_into_state)
-    # since subscribed/ICS calendars don't have a predictable ID to configure directly.
+    # Resolved by name during a calendar sync -- subscribed calendars have no stable ID.
     girlfriend_howabout_calendar_id: str = ""
 
     def primary_calendar_id(self) -> str | None:

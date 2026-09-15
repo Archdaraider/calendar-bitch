@@ -1,13 +1,4 @@
-"""Girlfriend's calendars -- read-only, separate from the owner's own calendars (see
-app.gcal.calendar.sync_calendars_into_state for the exclusion side of this). Two
-possible sources, used together if both are configured:
-  1. Her Google Calendar, shared directly with the owner's account (GIRLFRIEND_EMAIL).
-  2. A calendar the owner subscribed to via Google Calendar's own "Add calendar > From
-     URL" (a HowAbout public calendar feed, named via GIRLFRIEND_HOWABOUT_CALENDAR_NAME)
-     -- resolved by name at sync time since subscribed/ICS calendars don't have a
-     predictable ID.
-Both reuse the same Google credentials as the rest of the bot -- no separate auth needed.
-"""
+"""Girlfriend's calendars -- read-only, kept separate from the owner's own calendars."""
 
 from datetime import datetime, timedelta
 
@@ -22,11 +13,7 @@ from app.state import BotState
 async def get_girlfriend_events(
     credentials: Credentials, day: datetime, state: BotState, days: int = 1
 ) -> list[EventInfo]:
-    """Prefers her Howabout calendar (resolved by name into
-    state.girlfriend_howabout_calendar_id) since that's the calendar she actually keeps
-    up to date. Only falls back to GIRLFRIEND_EMAIL (her raw Google account share) if
-    the Howabout calendar hasn't been configured/resolved yet, so the feature still
-    works before the first sync."""
+    """Prefers her Howabout calendar; falls back to GIRLFRIEND_EMAIL if unresolved."""
     calendar_ids = []
     if state.girlfriend_howabout_calendar_id:
         calendar_ids.append(state.girlfriend_howabout_calendar_id)

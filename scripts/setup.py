@@ -1,14 +1,4 @@
-"""Guided local setup for Calendar_Bitch. Run this first, before deploying anywhere:
-
-    python scripts/setup.py
-
-Walks you through creating `.env` (required vars first, then skippable optional
-ones), validates your Telegram bot token live, and offers to run the Google sign-in
-step for you. Finishes by printing the exact next steps to deploy on Railway.
-
-Safe to re-run -- it only ever asks about vars that are still blank/placeholder in
-your existing `.env`, and leaves anything you've already filled in untouched.
-"""
+"""Guided local setup. Run before deploying anywhere: python scripts/setup.py"""
 
 import subprocess
 import sys

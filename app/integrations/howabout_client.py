@@ -1,10 +1,5 @@
-"""Placeholder adapter for the future HowAbout integration.
-
-Nothing here talks to a real HowAbout API yet -- HOWABOUT_API_KEY and
-HOWABOUT_BASE_URL are placeholders (see .env.example). When HowAbout exposes
-an API, implement the HTTP calls inside push_shared_events() and this module
-is the only thing that needs to change.
-"""
+"""Placeholder adapter for a future HowAbout integration -- nothing here calls a real
+API yet, see push_shared_events()."""
 
 import logging
 from dataclasses import dataclass

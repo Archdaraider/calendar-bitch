@@ -1,15 +1,4 @@
-"""One-time local Google OAuth consent for Calendar_Bitch.
-
-Run this once on your Mac, after filling in TELEGRAM_BOT_TOKEN, GOOGLE_CLIENT_ID,
-GOOGLE_CLIENT_SECRET, and OWNER_TELEGRAM_USER_ID in .env:
-
-    python scripts/google_auth_setup.py
-
-It opens your browser, you sign in with the Google account you want the bot to use,
-and grant Calendar access. It prints a refresh token -- paste that into .env / Railway
-as GOOGLE_REFRESH_TOKEN. It also seeds data/state.json with your live calendar list and
-detected timezone.
-"""
+"""One-time local Google OAuth consent: python scripts/google_auth_setup.py"""
 
 import asyncio
 import os

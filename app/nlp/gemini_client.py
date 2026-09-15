@@ -1,7 +1,4 @@
-"""Generic Gemini caller with automatic fallback across up to 3 free-tier API keys
-(GEMINI_API_KEYS). Callers that want structured output pass a responseSchema via
-generate_json(); generate_text() is for plain short text (e.g. a quote).
-"""
+"""Gemini caller with fallback across up to 3 API keys (GEMINI_API_KEYS)."""
 
 import json
 import logging

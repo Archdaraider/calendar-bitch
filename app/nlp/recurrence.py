@@ -1,9 +1,4 @@
-"""Deterministic recurrence-rule math. Gemini extracts the semantic pieces (an
-interval like "every"/"every other", and an approximate "until" reference month/date)
--- exact calendar arithmetic (e.g. figuring out precisely which date is "the last
-Monday of December") is computed here in plain Python rather than trusted to an LLM,
-which is unreliable at exact date arithmetic.
-"""
+"""Deterministic recurrence-rule math -- exact date arithmetic, not left to Gemini."""
 
 import calendar as _calendar_module
 from datetime import date, datetime, timedelta
@@ -16,10 +11,7 @@ WEEKDAY_NAMES = {
 
 
 def build_weekly_rrule(start: datetime, interval: int, until_hint: str | None) -> str:
-    """`start`'s weekday determines BYDAY. `until_hint`, if given, is any date
-    (YYYY-MM-DD) within the intended final month -- the recurrence's actual UNTIL is
-    computed as the last occurrence of `start`'s weekday on or before the end of that
-    month (e.g. "until December" -> the last Monday of December)."""
+    """`until_hint` is any date in the final month -- resolves to the last occurrence of `start`'s weekday in it."""
     byday = RRULE_BYDAY[start.weekday()]
     interval = max(1, interval or 1)
     rrule = f"RRULE:FREQ=WEEKLY;INTERVAL={interval};BYDAY={byday}"
@@ -39,18 +31,14 @@ def build_weekly_rrule(start: datetime, interval: int, until_hint: str | None) -
 
 
 def truncate_rrule(rrule: str, last_occurrence_date: date) -> str:
-    """Rewrites an existing RRULE's UNTIL so the series stops after
-    `last_occurrence_date` (inclusive) -- used by bulk-delete's "only remove
-    today-onward occurrences" truncation, which leaves past occurrences alone since
-    they're just history at that point, not something to retroactively edit."""
+    """Rewrites UNTIL so the series stops after `last_occurrence_date`."""
     parts = [p for p in rrule.split(";") if not p.startswith("UNTIL=")]
     parts.append(f"UNTIL={last_occurrence_date.strftime('%Y%m%d')}T235959Z")
     return ";".join(parts)
 
 
 def describe_rrule(rrule: str) -> str:
-    """Human-readable summary for confirmation messages, e.g.
-    'every other Monday, until 25 Jan 2027'."""
+    """Human-readable summary, e.g. 'every other Monday, until 25 Jan 2027'."""
     parts = dict(p.split("=", 1) for p in rrule.removeprefix("RRULE:").split(";") if "=" in p)
     interval = int(parts.get("INTERVAL", 1))
     byday = parts.get("BYDAY", "")

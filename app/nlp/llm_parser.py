@@ -1,12 +1,5 @@
-"""Gemini-based event parsing (via app.nlp.gemini_client, which handles the 3-key
-fallback), with a final fallback to the local dateparser-based parser
-(app.nlp.event_parser) if every Gemini key fails or none are configured.
-
-Categories are NOT auto-assigned here -- the user picks manually via buttons after
-parsing (see app/bot/handlers.py's category picker). This module only extracts intent
-(add a new event vs. cancel an existing one on a specific date) and, for "add", the
-title/time/duration/recurrence.
-"""
+"""Gemini-based event parsing, falling back to the local dateparser-based parser if
+every Gemini key fails or none are configured."""
 
 import logging
 from datetime import datetime, timedelta
@@ -163,8 +156,7 @@ async def parse_event_with_ai(text: str, now: datetime | None = None) -> ParsedE
 
     start_raw = result.get("start")
     if not start_raw:
-        # Gemini explicitly found no date/time in the message -- trust that rather
-        # than retrying with the (weaker) local parser.
+        # Gemini found no date/time -- trust that instead of retrying locally.
         return None
 
     try:
