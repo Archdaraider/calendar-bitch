@@ -996,6 +996,11 @@ async def timezone_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 @restricted
 async def night_agenda_on(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = _get_state(context)
+    if state.night_agenda_enabled:
+        await update.effective_message.reply_text(
+            f"Already on — sent around {state.night_agenda_time}."
+        )
+        return
     state.night_agenda_enabled = True
     save_state(state)
     await update.effective_message.reply_text(
@@ -1006,6 +1011,9 @@ async def night_agenda_on(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 @restricted
 async def night_agenda_off(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = _get_state(context)
+    if not state.night_agenda_enabled:
+        await update.effective_message.reply_text("Already off.")
+        return
     state.night_agenda_enabled = False
     save_state(state)
     await update.effective_message.reply_text("Nightly reminder disabled.")
@@ -1036,6 +1044,11 @@ async def girlfriend_agenda_on(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
     state = _get_state(context)
+    if state.girlfriend_agenda_enabled:
+        await update.effective_message.reply_text(
+            f"Already on — sent around {state.girlfriend_agenda_time}."
+        )
+        return
     state.girlfriend_agenda_enabled = True
     save_state(state)
     await update.effective_message.reply_text(
@@ -1046,6 +1059,9 @@ async def girlfriend_agenda_on(update: Update, context: ContextTypes.DEFAULT_TYP
 @restricted
 async def girlfriend_agenda_off(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = _get_state(context)
+    if not state.girlfriend_agenda_enabled:
+        await update.effective_message.reply_text("Already off.")
+        return
     state.girlfriend_agenda_enabled = False
     save_state(state)
     await update.effective_message.reply_text("Girlfriend's schedule summary disabled.")
