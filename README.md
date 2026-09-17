@@ -164,11 +164,15 @@ inside Railway's Free plan ($0/month, $1/month included usage credit):
   **webhook** rather than polling, so Railway's **Serverless** feature can put it to
   sleep between messages and wake it in ~1-2s, billing only for active seconds instead
   of 24/7.
-- **Cron service** (`app/agenda_cron.py`) — a separate scheduled job, ticking every 5
-  minutes (Railway's minimum), that sends the two adjustable scheduled messages. Exists
-  because the main service is asleep most of the day and can't reliably fire its own
-  timers. Its window-check (`_next_day_target()`) correctly handles any configured send
-  time, including ones that fall right on the midnight boundary.
+- **Cron service** (`app/agenda_cron.py`) — a separate, stateless job, ticking every 5
+  minutes (Railway's minimum). Exists because the main service is asleep most of the
+  day and can't reliably fire its own timers. Railway volumes attach to exactly one
+  service, so this one holds no state and no Google/Telegram credentials at all — each
+  tick is just an authenticated `POST /internal/tick` to the main service, which runs
+  the actual checks (and sends the two adjustable scheduled messages) in-process there,
+  against the one real state file. Its window-check (`_next_day_target()`) correctly
+  handles any configured send time, including ones that fall right on the midnight
+  boundary.
 - Google credentials are built at startup from `GOOGLE_CLIENT_ID`/`SECRET`/
   `GOOGLE_REFRESH_TOKEN`; the client library auto-refreshes the access token in memory
   on every call.
@@ -183,7 +187,7 @@ inside Railway's Free plan ($0/month, $1/month included usage credit):
   separate auth. It's deliberately excluded from your own `/today`/`/week`/`/next`/
   `/categorize`.
 - All bot state (calendar Share/Private flags, timezone, scheduled-message settings)
-  lives in one JSON file on a Volume **shared by both services**.
+  lives in one JSON file on a Volume attached to the **main service only**.
 - `/today`, `/week`, `/next`, `/upcoming_*`, `/gf`, `/categorize`, bulk actions, and the
   scheduled messages all share a disk-backed event cache (`app/gcal/cache.py`, same
   Volume) — the first of these to run fetches a wide window and caches it for 5
@@ -221,17 +225,21 @@ climbing — a steady climb usually means something's keeping the main service a
 
 ## Deploying to Railway
 
-You'll create **two services** in one Railway project, sharing one Volume.
+You'll create **two services** in one Railway project. Only the main service gets a
+Volume — Railway volumes attach to exactly one service, so the cron service stays
+stateless and talks to the main service over HTTP instead (see Architecture above).
 
 1. **Install the CLI and log in**: `railway login`, then `railway init` from this
    directory.
-2. **Add a Volume**: dashboard → project → New → Volume → mount path `/data`.
+2. **Add a Volume to the main service**: dashboard → main service → New → Volume →
+   mount path `/data`.
 3. **Set env vars on the main service**: dashboard → service → Variables → Raw Editor,
    paste in everything from your local `.env` plus:
    ```
    STATE_FILE_PATH=/data/state.json
    PUBLIC_BASE_URL=<filled in after step 4>
    TELEGRAM_WEBHOOK_SECRET=<python -c "import secrets; print(secrets.token_urlsafe(32))">
+   INTERNAL_API_SECRET=<python -c "import secrets; print(secrets.token_urlsafe(32))">
    ```
 4. **Deploy and set the public domain**: `railway up`, then dashboard → service →
    Settings → Networking → Generate Domain. Copy it into `PUBLIC_BASE_URL`, then
@@ -239,14 +247,15 @@ You'll create **two services** in one Railway project, sharing one Volume.
 5. **Enable Serverless** (this is what makes it fit the free tier): dashboard → main
    service → Settings → Deploy → Serverless → toggle on.
 6. **Add the cron service**: dashboard → project → New → same repo → Settings → Start
-   Command → `python -m app.agenda_cron` → Cron Schedule → `*/5 * * * *`. Attach the
-   same Volume at `/data`. Copy over `TELEGRAM_BOT_TOKEN`, `OWNER_TELEGRAM_USER_ID`,
-   `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_REFRESH_TOKEN`, `STATE_FILE_PATH`,
-   `GIRLFRIEND_EMAIL`/`GIRLFRIEND_HOWABOUT_CALENDAR_NAME`, `HOWABOUT_APP_LINK`, and
-   `GEMINI_API_KEYS`/`GEMINI_MODEL` (used for the nightly quote; falls back to a static
-   list if missing). It does *not* need `PUBLIC_BASE_URL`/`TELEGRAM_WEBHOOK_SECRET` —
-   those are only for the webhook. Leave Serverless **off** here — cron jobs run to
-   completion and exit on their own regardless.
+   Command → `python -m app.agenda_cron` → Cron Schedule → `*/5 * * * *`. It needs only
+   two env vars, both copied from the main service:
+   ```
+   PUBLIC_BASE_URL=<same value as the main service>
+   INTERNAL_API_SECRET=<same value as the main service>
+   ```
+   No Volume, no Google/Telegram credentials — it just pings `/internal/tick` on the
+   main service, which does the actual work there. Leave Serverless **off** here — cron
+   jobs run to completion and exit on their own regardless.
 7. **Verify**: Usage tab over the next day or two should track near $0, not climb
    steadily.
 
@@ -270,9 +279,12 @@ rather manage it that way than clicking through the dashboard.
   matches, deselect one, tap Apply → confirm only the selected ones were touched.
 - `/edit` and `/cancel` → confirm the recent/upcoming view toggle and Back button work.
 - If you configured a second calendar: `/calendars` → confirm it's excluded from the
-  list; `/gf_schedule` → confirm it shows her actual events.
+  list; `/gf_schedule` → confirm it shows her actual events, with times converted to
+  *your* timezone (her calendar's own stored offset can be completely different from
+  yours, e.g. a subscribed feed storing raw UTC).
 - `/night_agenda_set` a few minutes out, `/night_agenda_on` → wait → confirm the push
-  arrives from the **cron service** (check its logs, not the main service's).
+  arrives. The actual send happens inside the **main service**'s process (check its
+  logs) — the cron service's own logs should just show a `POST /internal/tick` succeeding.
 - Message the bot from a different Telegram account → confirm "This bot is private."
 - Don't message the bot for 20+ minutes, then text it → confirm it still responds (just
   slightly slower on that first message — the sleep/wake cycle working as intended).
