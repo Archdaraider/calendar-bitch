@@ -137,21 +137,28 @@ def _event_title(e) -> str:
     return e.summary
 
 
-def _event_day(e) -> date:
-    return datetime.strptime(e.start, "%Y-%m-%d").date() if e.is_all_day else datetime.fromisoformat(e.start).date()
+def _event_local_start(e, tz) -> datetime:
+    """Converts to `tz` before display -- an event's stored offset doesn't necessarily
+    match the viewer's zone at all (e.g. a subscribed calendar's events can carry a
+    raw UTC offset rather than the owner's own timezone)."""
+    return datetime.fromisoformat(e.start).astimezone(tz)
+
+
+def _event_day(e, tz) -> date:
+    return datetime.strptime(e.start, "%Y-%m-%d").date() if e.is_all_day else _event_local_start(e, tz).date()
 
 
 # Short on purpose so it never wraps on a narrow phone screen.
 DAY_SEPARATOR = "──────"
 
 
-def _format_events(events: list) -> str:
+def _format_events(events: list, tz) -> str:
     if not events:
         return "Nothing found."
     lines: list[str] = []
     current_day: date | None = None
     for e in events:
-        day = _event_day(e)
+        day = _event_day(e, tz)
         if day != current_day:
             if current_day is not None:
                 lines.append("")
@@ -161,7 +168,7 @@ def _format_events(events: list) -> str:
         if e.is_all_day:
             lines.append(f"{_event_title(e)} (all day)")
         else:
-            start = datetime.fromisoformat(e.start)
+            start = _event_local_start(e, tz)
             lines.append(f"{start.strftime('%H:%M')} — {_event_title(e)}")
     return "\n".join(lines)
 
@@ -228,10 +235,10 @@ async def _list_events_window(update: Update, context: ContextTypes.DEFAULT_TYPE
     credentials = _get_credentials(context)
     now = datetime.now(timezone.utc)
     events = await list_events_cached(credentials, state.all_calendar_ids(), now, now + window)
-    await update.effective_message.reply_text(f"{label}:\n{_format_events(events)}")
+    await update.effective_message.reply_text(f"{label}:\n{_format_events(events, safe_zoneinfo(state.timezone))}")
 
 
-def _format_daily_brief(events: list, day: date, quote: str) -> str:
+def _format_daily_brief(events: list, day: date, quote: str, tz) -> str:
     date_str = day.strftime("%d/%m")
     greeting = get_settings().greeting_name
     lines = [f"Good day, {greeting}. Here is your schedule for today, ({date_str}):", ""]
@@ -242,7 +249,7 @@ def _format_daily_brief(events: list, day: date, quote: str) -> str:
             if e.is_all_day:
                 lines.append(f"{idx}. {_event_title(e)} (all day)")
             else:
-                start = datetime.fromisoformat(e.start)
+                start = _event_local_start(e, tz)
                 lines.append(f"{idx}. {start.strftime('%H:%M')} — {_event_title(e)}")
     lines.append("")
     lines.append(f'"{quote}"')
@@ -264,7 +271,8 @@ async def today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     events = await list_events_cached(credentials, state.all_calendar_ids(), start, start + timedelta(days=1))
     quote = await get_daily_quote()
-    await update.effective_message.reply_text(_format_daily_brief(events, now.date(), quote))
+    tz = safe_zoneinfo(state.timezone)
+    await update.effective_message.reply_text(_format_daily_brief(events, now.date(), quote, tz))
 
 
 @restricted
@@ -279,7 +287,7 @@ async def tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     now = datetime.now(safe_zoneinfo(state.timezone))
     start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     events = await list_events_cached(credentials, state.all_calendar_ids(), start, start + timedelta(days=1))
-    await update.effective_message.reply_text(f"Tomorrow:\n{_format_events(events)}")
+    await update.effective_message.reply_text(f"Tomorrow:\n{_format_events(events, safe_zoneinfo(state.timezone))}")
 
 
 @restricted
@@ -291,7 +299,7 @@ async def next_event(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if not events:
         await update.effective_message.reply_text("No upcoming events in the next 30 days.")
         return
-    await update.effective_message.reply_text("Next up:\n" + _format_events(events[:1]))
+    await update.effective_message.reply_text("Next up:\n" + _format_events(events[:1], safe_zoneinfo(state.timezone)))
 
 
 UPCOMING_WINDOW_DAYS = 30
@@ -309,7 +317,8 @@ async def _list_upcoming_by_category(
         credentials, state.all_calendar_ids(), now, now + timedelta(days=UPCOMING_WINDOW_DAYS)
     )
     filtered = [e for e in events if get_category(e.summary) in categories]
-    await update.effective_message.reply_text(f"{label} (next {UPCOMING_WINDOW_DAYS} days):\n{_format_events(filtered)}")
+    tz = safe_zoneinfo(state.timezone)
+    await update.effective_message.reply_text(f"{label} (next {UPCOMING_WINDOW_DAYS} days):\n{_format_events(filtered, tz)}")
 
 
 @restricted
@@ -417,7 +426,8 @@ async def gf_schedule_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     now = datetime.now(safe_zoneinfo(state.timezone))
     events = await get_girlfriend_events(credentials, now, state, days=GF_SCHEDULE_DAYS)
     name = get_settings().girlfriend_display_name
-    await update.effective_message.reply_text(f"👩🏽❤️ {name}'s week ahead:\n{_format_events(events)}")
+    tz = safe_zoneinfo(state.timezone)
+    await update.effective_message.reply_text(f"👩🏽❤️ {name}'s week ahead:\n{_format_events(events, tz)}")
 
 
 # Bounded by her calendar day, not yours.

@@ -5,6 +5,7 @@ from fastapi import FastAPI, Header, HTTPException, Request, Response
 from telegram import BotCommand, Update
 from telegram.ext import Application
 
+from app.agenda_cron import run_scheduled_checks
 from app.bot.handlers import BOT_COMMANDS, register_handlers
 from app.core.config import get_settings
 from app.gcal.credentials import build_credentials
@@ -94,4 +95,12 @@ async def telegram_webhook(
     # Awaited inline, not queued -- Serverless can sleep right after this response,
     # so nothing can be left running in the background.
     await telegram_app.process_update(update)
+    return Response(status_code=200)
+
+
+@app.post("/internal/tick")
+async def internal_tick(x_internal_secret: str | None = Header(default=None)) -> Response:
+    if not settings.internal_api_secret or x_internal_secret != settings.internal_api_secret:
+        raise HTTPException(status_code=401, detail="Invalid internal secret")
+    await run_scheduled_checks()
     return Response(status_code=200)

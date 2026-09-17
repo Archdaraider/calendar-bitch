@@ -1,11 +1,15 @@
-"""Separate Railway Cron Job that sends the scheduled messages every 5 minutes,
-since the main webhook service sleeps and can't fire its own timers.
+"""Scheduled-message checks, run every 5 minutes.
+
+Railway volumes attach to exactly one service, so this cron service has no
+persistent disk of its own -- its entrypoint (main()) just pings the main
+service's /internal/tick, which calls run_scheduled_checks() in-process there,
+against the one real state file on its volume.
 
     python -m app.agenda_cron
 """
 
-import asyncio
 import logging
+import os
 from datetime import date, datetime, timedelta
 
 import httpx
@@ -55,7 +59,7 @@ def _next_day_target(target_time: str, now: datetime) -> date | None:
     return now.date() if wrapped_past_midnight else now.date() + timedelta(days=1)
 
 
-def _format_night_preview(events: list, preview_date: date, quote: str) -> str:
+def _format_night_preview(events: list, preview_date: date, quote: str, tz) -> str:
     date_str = preview_date.strftime("%d/%m")
     greeting = get_settings().greeting_name
     lines = [f"Good morning, {greeting}. Here is your schedule for tmr, ({date_str}):", ""]
@@ -66,7 +70,7 @@ def _format_night_preview(events: list, preview_date: date, quote: str) -> str:
             if e.is_all_day:
                 lines.append(f"{idx}. {_event_title(e)} (all day)")
             else:
-                start = datetime.fromisoformat(e.start)
+                start = datetime.fromisoformat(e.start).astimezone(tz)
                 lines.append(f"{idx}. {start.strftime('%H:%M')} — {_event_title(e)}")
     lines.append("")
     lines.append(f'"{quote}"')
@@ -105,7 +109,7 @@ async def maybe_send_night_preview() -> None:
         events = await list_events_cached(credentials, cal_ids, start_of_day, start_of_day + timedelta(days=1))
 
     quote = await get_daily_quote()
-    text = _format_night_preview(events, preview_date, quote)
+    text = _format_night_preview(events, preview_date, quote, safe_zoneinfo(state.timezone))
     await _send_telegram_message(text)
 
     state.night_agenda_last_sent_date = today_str
@@ -146,7 +150,7 @@ async def maybe_send_girlfriend_summary() -> None:
         logger.warning("Could not fetch girlfriend's calendar -- check sharing is still granted", exc_info=True)
         return
 
-    text = format_girlfriend_summary(events, target_dt, when="tomorrow")
+    text = format_girlfriend_summary(events, target_dt, safe_zoneinfo(state.timezone), when="tomorrow")
     await _send_telegram_message(text)
 
     state.girlfriend_agenda_last_sent_date = today_str
@@ -154,7 +158,7 @@ async def maybe_send_girlfriend_summary() -> None:
     logger.info("Sent girlfriend summary for %s", today_str)
 
 
-async def _run_all() -> None:
+async def run_scheduled_checks() -> None:
     # Each check is independent -- one raising shouldn't block the other.
     for check in (maybe_send_night_preview, maybe_send_girlfriend_summary):
         try:
@@ -164,7 +168,21 @@ async def _run_all() -> None:
 
 
 def main() -> None:
-    asyncio.run(_run_all())
+    """Entrypoint for the standalone cron service -- see module docstring. Reads env
+    vars directly rather than going through app.core.config.Settings, since this
+    process's minimal env doesn't have the webhook-service fields Settings requires."""
+    public_base_url = os.environ.get("PUBLIC_BASE_URL", "")
+    internal_api_secret = os.environ.get("INTERNAL_API_SECRET", "")
+    if not public_base_url or not internal_api_secret:
+        logger.error("PUBLIC_BASE_URL and INTERNAL_API_SECRET must both be set for the cron service to work")
+        return
+    url = f"{public_base_url.rstrip('/')}/internal/tick"
+    try:
+        resp = httpx.post(url, headers={"X-Internal-Secret": internal_api_secret}, timeout=60)
+        resp.raise_for_status()
+        logger.info("Tick delivered to %s", url)
+    except httpx.HTTPError:
+        logger.warning("Failed to deliver tick to %s", url, exc_info=True)
 
 
 if __name__ == "__main__":

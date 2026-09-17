@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     # Secret Telegram echoes back on every webhook call, to reject spoofed requests.
     telegram_webhook_secret: str = ""
 
+    # Shared secret the cron service uses to trigger /internal/tick on this service --
+    # the cron service has no persistent disk of its own (Railway volumes attach to
+    # exactly one service), so it pings this one to run the scheduled checks in-process
+    # here instead, against the one real state file.
+    internal_api_secret: str = ""
+
     @property
     def telegram_webhook_url(self) -> str:
         return f"{self.public_base_url.rstrip('/')}/telegram/webhook"

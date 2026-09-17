@@ -27,7 +27,7 @@ async def get_girlfriend_events(
     return await list_events_cached(credentials, calendar_ids, start_of_day, start_of_day + timedelta(days=days))
 
 
-def format_girlfriend_summary(events: list[EventInfo], day: datetime, when: str = "today") -> str:
+def format_girlfriend_summary(events: list[EventInfo], day: datetime, tz, when: str = "today") -> str:
     date_str = day.strftime("%d/%m")
     label = "today" if when == "today" else "tomorrow"
     name = get_settings().girlfriend_display_name
@@ -39,6 +39,8 @@ def format_girlfriend_summary(events: list[EventInfo], day: datetime, when: str 
             if e.is_all_day:
                 lines.append(f"{idx}. {e.summary} (all day)")
             else:
-                start = datetime.fromisoformat(e.start)
+                # Her calendar's own stored offset (e.g. a subscribed feed's raw UTC)
+                # doesn't necessarily match the owner's timezone -- convert first.
+                start = datetime.fromisoformat(e.start).astimezone(tz)
                 lines.append(f"{idx}. {start.strftime('%H:%M')} — {e.summary}")
     return "\n".join(lines)
